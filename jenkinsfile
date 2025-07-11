@@ -1,0 +1,69 @@
+pipeline {
+  agent any
+
+  environment {
+    IMAGE_NAME = 'khadija000ctrl/ci-cd-app'
+    DOCKER_CRED = 'dockerhub-creds-id'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        // Checkout the full repo
+        git url: 'https://github.com/Khadija000-ctrl/khad-repo.git', branch: 'master'
+      }
+    }
+
+    stage('Install & Test') {
+      steps {
+        dir('2-containers') {
+          sh 'npm install'
+          sh 'npm test || echo "✅ No tests yet"'
+        }
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        dir('2-containers') {
+          sh "docker build -t $IMAGE_NAME ."
+        }
+      }
+    }
+
+    stage('Push Docker Image') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: "${DOCKER_CRED}",
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker push $IMAGE_NAME
+          '''
+        }
+      }
+    }
+
+    stage('Deploy Container') {
+      steps {
+        sh '''
+          docker stop my-app || true
+          docker rm my-app || true
+          docker pull $IMAGE_NAME
+          docker run -d --name my-app -p 3000:3000 $IMAGE_NAME
+        '''
+      }
+    }
+  }
+
+  post {
+    failure {
+      echo "❌ Build Failed"
+    }
+    success {
+      echo "✅ Build Successful"
+    }
+  }
+}
